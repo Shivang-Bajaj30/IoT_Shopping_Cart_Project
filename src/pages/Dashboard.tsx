@@ -1,15 +1,57 @@
 import { useEffect, useState } from "react";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+} from "firebase/auth";
 import { ref, onValue, update, remove } from "firebase/database";
 import type { CartItem } from "../types";
+import type { User } from "firebase/auth";
 import "./Dashboard.css";
+
+const FIXED_EMAIL = "smartcart@test.com";
+const FIXED_PASSWORD = "12345678";
 
 export default function Dashboard() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
+  const [user, setUser] = useState<User | null>(null);
 
+  // Auto-authenticate on mount
   useEffect(() => {
-    const cartRef = ref(db, "cart");
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+      } else {
+        // Not signed in — auto sign in
+        signInWithEmailAndPassword(auth, FIXED_EMAIL, FIXED_PASSWORD).catch(
+          (err) => {
+            if (err.code === "auth/user-not-found") {
+              createUserWithEmailAndPassword(auth, FIXED_EMAIL, FIXED_PASSWORD).catch(
+                (createErr: { message?: string }) => {
+                  setAuthError(createErr.message || "Auth failed");
+                  setLoading(false);
+                }
+              );
+            } else {
+              setAuthError(err.message || "Auth failed");
+              setLoading(false);
+            }
+          }
+        );
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
+
+  // Listen to cart data once authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    const cartRef = ref(db, `users/${user.uid}/cart`);
     const unsub = onValue(cartRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -27,24 +69,44 @@ export default function Dashboard() {
     });
 
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const totalPrice = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   const handleQuantityChange = async (item: CartItem, delta: number) => {
+    const user = auth.currentUser;
+    if (!user) return;
     const newQty = item.quantity + delta;
     if (newQty <= 0) {
-      await remove(ref(db, `cart/${item.id}`));
+      await remove(ref(db, `users/${user.uid}/cart/${item.id}`));
     } else {
-      await update(ref(db, `cart/${item.id}`), {
+      await update(ref(db, `users/${user.uid}/cart/${item.id}`), {
         quantity: newQty,
       });
     }
   };
 
   const handleRemoveItem = async (item: CartItem) => {
-    await remove(ref(db, `cart/${item.id}`));
+    const user = auth.currentUser;
+    if (!user) return;
+    await remove(ref(db, `users/${user.uid}/cart/${item.id}`));
   };
+
+  if (authError) {
+    return (
+      <div className="dashboard-page">
+        <div className="dash-bg">
+          <div className="dash-bg-circle dash-bg-circle--1"></div>
+          <div className="dash-bg-circle dash-bg-circle--2"></div>
+        </div>
+        <div className="dash-auth-error">
+          <h2>Connection Error</h2>
+          <p>{authError}</p>
+          <button onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-page">
@@ -143,7 +205,7 @@ export default function Dashboard() {
           {loading ? (
             <div className="dash-loading">
               <div className="dash-loading-spinner"></div>
-              <p>Loading cart data…</p>
+              <p>Connecting to SmartCart…</p>
             </div>
           ) : (
             <div className="dash-table-wrap">
