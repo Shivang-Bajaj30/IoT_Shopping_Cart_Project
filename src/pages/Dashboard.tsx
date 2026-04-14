@@ -3,6 +3,7 @@ import { auth, db } from "../firebase";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInAnonymously,
   onAuthStateChanged,
 } from "firebase/auth";
 import { ref, onValue, update, remove } from "firebase/database";
@@ -24,41 +25,62 @@ export default function Dashboard() {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUser(u);
-      } else {
-        // Not signed in — auto sign in
-        signInWithEmailAndPassword(auth, FIXED_EMAIL, FIXED_PASSWORD).catch(
-          (err) => {
-            if (err.code === "auth/user-not-found") {
-              createUserWithEmailAndPassword(auth, FIXED_EMAIL, FIXED_PASSWORD).catch(
-                (createErr: { message?: string }) => {
-                  setAuthError(createErr.message || "Auth failed");
-                  setLoading(false);
-                }
-              );
-            } else {
-              setAuthError(err.message || "Auth failed");
-              setLoading(false);
-            }
-          }
-        );
       }
     });
 
+    const fallbackToAnonymous = async (error: any) => {
+      try {
+        await signInAnonymously(auth);
+      } catch (anonErr: any) {
+        setAuthError(error?.message || anonErr?.message || "Auth failed");
+        setLoading(false);
+      }
+    };
+
+    const initAuth = async () => {
+      if (auth.currentUser) return;
+
+      try {
+        await signInWithEmailAndPassword(auth, FIXED_EMAIL, FIXED_PASSWORD);
+      } catch (err: any) {
+        if (err.code === "auth/user-not-found") {
+          try {
+            await createUserWithEmailAndPassword(auth, FIXED_EMAIL, FIXED_PASSWORD);
+          } catch (createErr: any) {
+            await fallbackToAnonymous(createErr);
+          }
+        } else {
+          await fallbackToAnonymous(err);
+        }
+      }
+    };
+
+    initAuth();
+
     return () => unsubAuth();
   }, []);
+
+  const ITEM_PRICES: Record<string, number> = {
+    "Diet Coke": 40,
+    "Toblerone": 150,
+    "Lotte Choco Pie": 20,
+    "Pringles Chips": 100,
+  };
 
   // Listen to cart data once authenticated
   useEffect(() => {
     if (!user) return;
 
-    const cartRef = ref(db, `users/${user.uid}/cart`);
+    const cartRef = ref(db, `cart`);
     const unsub = onValue(cartRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const parsed: CartItem[] = Object.entries(data).map(
-          ([key, val]) => ({
-            ...(val as CartItem),
+          ([key, val]: [string, any]) => ({
             id: key,
+            name: val.product || "Unknown Item",
+            quantity: val.quantity || 1,
+            price: ITEM_PRICES[val.product] || 50,
           })
         );
         setItems(parsed);
@@ -78,9 +100,9 @@ export default function Dashboard() {
     if (!user) return;
     const newQty = item.quantity + delta;
     if (newQty <= 0) {
-      await remove(ref(db, `users/${user.uid}/cart/${item.id}`));
+      await remove(ref(db, `cart/${item.id}`));
     } else {
-      await update(ref(db, `users/${user.uid}/cart/${item.id}`), {
+      await update(ref(db, `cart/${item.id}`), {
         quantity: newQty,
       });
     }
@@ -89,7 +111,7 @@ export default function Dashboard() {
   const handleRemoveItem = async (item: CartItem) => {
     const user = auth.currentUser;
     if (!user) return;
-    await remove(ref(db, `users/${user.uid}/cart/${item.id}`));
+    await remove(ref(db, `cart/${item.id}`));
   };
 
   if (authError) {

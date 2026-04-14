@@ -12,6 +12,24 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+const requiredConfig: Array<keyof typeof firebaseConfig> = [
+  "apiKey",
+  "authDomain",
+  "databaseURL",
+  "projectId",
+  "storageBucket",
+  "messagingSenderId",
+  "appId",
+];
+
+const missingConfig = requiredConfig.filter((key) => !firebaseConfig[key]);
+if (missingConfig.length) {
+  throw new Error(
+    `Missing Firebase config values: ${missingConfig.join(", ")}. ` +
+      `Check .env and restart the dev server.`
+  );
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getDatabase(app);
