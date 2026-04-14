@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { auth, db } from "../firebase";
 import {
   signInWithEmailAndPassword,
@@ -9,6 +10,7 @@ import {
 import { ref, onValue, update, remove } from "firebase/database";
 import type { CartItem } from "../types";
 import type { User } from "firebase/auth";
+import { ITEM_PRICES } from "../constants";
 import "./Dashboard.css";
 
 const FIXED_EMAIL = "smartcart@test.com";
@@ -19,6 +21,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
   const [user, setUser] = useState<User | null>(null);
+  const navigate = useNavigate();
 
   // Auto-authenticate on mount
   useEffect(() => {
@@ -60,12 +63,6 @@ export default function Dashboard() {
     return () => unsubAuth();
   }, []);
 
-  const ITEM_PRICES: Record<string, number> = {
-    "Diet Coke": 40,
-    "Toblerone": 150,
-    "Lotte Choco Pie": 20,
-    "Pringles Chips": 100,
-  };
 
   // Listen to cart data once authenticated
   useEffect(() => {
@@ -328,6 +325,22 @@ export default function Dashboard() {
                   </tfoot>
                 )}
               </table>
+            </div>
+          )}
+          
+          {items.length > 0 && !loading && (
+            <div className="dash-table-footer">
+              <button 
+                className="dash-checkout-btn"
+                onClick={() => navigate("/payment")}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                  <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                  <path d="M9 14l2 2 4-4"></path>
+                </svg>
+                Proceed to Checkout
+              </button>
             </div>
           )}
         </div>
